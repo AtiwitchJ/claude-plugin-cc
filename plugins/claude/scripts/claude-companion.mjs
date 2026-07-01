@@ -22,7 +22,13 @@ import {
   getClaudeAvailability,
   runClaude
 } from "./lib/claude.mjs";
-import { invokeDirect, isStubError } from "./lib/delegate.mjs";
+import {
+  createDelegateLogFile,
+  extractDelegatePrompt,
+  extractDelegateTimeoutMs,
+  invokeDirect,
+  isStubError
+} from "./lib/delegate.mjs";
 import {
   generateJobId,
   listJobs,
@@ -105,7 +111,7 @@ async function delegateToAgent(agent, argv) {
   });
   const stdout = result.stdout ?? "";
   const stderr = result.stderr ?? "";
-  const stubDetected = isStubError(stderr, stdout);
+  const stubDetected = isStubError(stderr, stdout, result.status);
 
   if (!stubDetected && typeof result.status === "number") {
     process.stdout.write(stdout);
@@ -119,9 +125,26 @@ async function delegateToAgent(agent, argv) {
   );
 
   try {
-    const positionalArgs = argv.filter((a) => !a.startsWith("--") && !a.startsWith("-"));
-    const promptArg = positionalArgs.length > 1 ? positionalArgs[positionalArgs.length - 1] : (positionalArgs[0] ?? "");
-    const fallback = await invokeDirect(agent, promptArg || "(no prompt)", process.cwd(), { timeoutMs: 60_000 });
+    // argv[0] is always the subcommand (e.g. "task"); only the args after it are prompt candidates.
+    const prompt = extractDelegatePrompt(argv.slice(1));
+    const background = argv.includes("--background");
+    const timeoutMs = extractDelegateTimeoutMs(argv);
+    const logFile = background ? createDelegateLogFile(agent) : null;
+
+    const fallback = await invokeDirect(agent, prompt || "(no prompt)", process.cwd(), {
+      timeoutMs,
+      background,
+      logFile
+    });
+
+    if (fallback.background) {
+      process.stdout.write(
+        `Delegated ${agent} task running in background (pid ${fallback.pid ?? "unknown"}).${logFile ? ` Logs: ${logFile}` : ""}\n`
+      );
+      process.exit(0);
+      return;
+    }
+
     process.stdout.write(`${fallback.stdout}\n`);
     process.exit(0);
   } catch (error) {
@@ -136,7 +159,7 @@ function printUsage() {
     [
       "Usage:",
       "  node scripts/claude-companion.mjs setup [--json]",
-      "  node scripts/claude-companion.mjs task [--background] [--delegate-to=<agent>] [--resume|--fresh] [--model <name>] [prompt]",
+      "  node scripts/claude-companion.mjs task [--background] [--delegate-to=<agent>] [--resume|--fresh] [--model <name>] [--prompt=<text>] [--timeout=<ms>] [prompt]",
       "  node scripts/claude-companion.mjs status [job-id] [--json]",
       "  node scripts/claude-companion.mjs result [job-id] [--json]",
       "  node scripts/claude-companion.mjs cancel [job-id] [--json]",
@@ -241,7 +264,8 @@ async function executeTaskRun({ cwd, prompt, model, resume, additionalDirs, onPr
     {
       title: effectiveResume ? "Claude Resume" : "Claude Task",
       jobId: null,
-      write: false
+      write: false,
+      agentName: "Claude"
     }
   );
 
@@ -373,7 +397,7 @@ function handleResult(argv) {
   const reference = positionals[0] ?? "";
   const { workspaceRoot, job } = resolveResultJob(cwd, reference);
   const storedJob = readStoredJob(workspaceRoot, job.id);
-  outputResult(options.json ? { job, storedJob } : renderStoredJobResult(job, storedJob), options.json);
+  outputResult(options.json ? { job, storedJob } : renderStoredJobResult(job, storedJob, { agentName: "Claude" }), options.json);
 }
 
 function handleTaskResumeCandidate(argv) {
