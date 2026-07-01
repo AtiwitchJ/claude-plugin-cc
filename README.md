@@ -5,11 +5,13 @@ This plugin is for Claude Code users who want to delegate code reviews or tasks 
 orchestration, or just running a fresh Claude session against a specific task without
 cluttering the current Claude Code session.
 
-## What You Get (once implemented)
+## What You Get
 
 - `/claude:review` for a normal read-only review
 - `/claude:adversarial-review` for a steerable challenge review
-- `/claude:rescue`, `/claude:transfer`, `/claude:status`, `/claude:result`, and `/claude:cancel`
+- `/claude:rescue` to delegate investigation, a fix request, or follow-up work (runs `task`)
+- `/claude:transfer` to import the current Claude Code session as a resumable Claude session
+- `/claude:status`, `/claude:result`, and `/claude:cancel` to track background jobs
 - `/claude:setup` to verify the CLI and authentication
 
 ## Requirements
@@ -25,34 +27,32 @@ cluttering the current Claude Code session.
 /plugin install claude@agents-plugin-cc-claude
 ```
 
-The scaffold ships with stub commands that will fail with a "not implemented" error
-until you wire up `plugins/claude/scripts/lib/claude.mjs` and
-`plugins/claude/scripts/claude-companion.mjs`.
+## Cross-agent delegation
 
-## Implementing the plugin
+`/claude:rescue` (and `claude-companion.mjs task` directly) accepts `--delegate-to=<agent>`
+to route the prompt through another plugin's companion script instead of `claude` (e.g.
+`--delegate-to=kilo`). Behavior:
 
-1. Open `plugins/claude/scripts/lib/claude.mjs` and replace the stub functions with real
-   implementations that:
-   - detect `claude` availability (`binaryAvailable` is already imported)
-   - probe authentication by inspecting `~/.claude/` (`getClaudeAuthStatus`)
-   - invoke the CLI in non-interactive mode (`runClaude`) — typically
-     `claude --print --output-format json "<prompt>"`
-   - discover a resumable session if available (`findLatestResumableSession`)
-2. Open `plugins/claude/scripts/claude-companion.mjs` and copy the body of
-   `../kilo-plugin-cc/plugins/kilo/scripts/kilo-companion.mjs`, renaming the imports from
-   `./lib/kilo.mjs` to `./lib/claude.mjs` and the `runKilo` calls to your new wrapper.
-3. Add tests under `tests/` that cover argument parsing, state, and the new wrapper.
+1. If the target agent's companion is fully implemented, its output is returned as-is.
+2. If the target's companion is a stub, `claude-companion.mjs` automatically falls back to
+   invoking that agent's CLI binary directly (see `DIRECT_INVOCATION` in
+   `scripts/lib/delegate.mjs`).
 
-## Cross-agent orchestration
+Extra flags that apply to the fallback path:
 
-The `claude` plugin is a natural delegation target for other agents. For example,
-`/kilo:rescue --delegate-to=claude ...` could route a kilo task through the Claude
-plugin instead. That feature is not implemented yet — see `kilo-plugin-cc/` for the
-current rescue flow.
+- `--prompt=<text>` — pass the prompt unambiguously instead of relying on trailing
+  positional args (recommended when the prompt contains flag-like tokens).
+- `--timeout=<ms>` — override the default 60s fallback timeout for a single call.
+  You can also set the `CLAUDE_PLUGIN_DELEGATE_TIMEOUT_MS` environment variable to
+  change the default for every delegated call.
+- `--background` — when the fallback triggers, the target CLI is spawned detached and
+  the command returns immediately with a PID and log file path instead of blocking.
 
 ## Reference
 
-See `../kilo-plugin-cc/` for a complete working example.
+See `../kilo-plugin-cc/` — the reference implementation this plugin's scripts were
+scaffolded from (`scripts/lib/delegate.mjs` and `render.mjs` are intentionally kept
+byte-identical between the two repos; mirror any change to shared delegation logic there).
 
 ## License
 
