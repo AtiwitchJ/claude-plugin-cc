@@ -86,8 +86,9 @@ const KNOWN_COMPANIONS = {
  * Resolve the absolute path to another plugin's companion script.
  *
  * Search order:
- *   1. Sibling repo at D:\mind\<repo>
- *   2. Sibling repo at <cwd-parent>\<repo>
+ *   1. Sibling repos under AGENTS_PLUGIN_CC_ROOT, when set
+ *   2. Sibling repos relative to this plugin directory
+ *   3. Sibling repos relative to the current working directory
  *
  * Lets the user run claude-companion from anywhere without configuration.
  */
@@ -96,11 +97,14 @@ function resolveCompanionScript(agent) {
   if (!repo) {
     throw new Error(`Unknown agent "${agent}". Known: ${Object.keys(KNOWN_COMPANIONS).join(", ")}`);
   }
-  const candidates = [
-    path.join("D:\\mind", repo, "plugins", agent, "scripts", `${agent}-companion.mjs`),
-    path.join(process.cwd(), "..", repo, "plugins", agent, "scripts", `${agent}-companion.mjs`),
-    path.resolve(ROOT_DIR, "..", "..", "..", "..", repo, "plugins", agent, "scripts", `${agent}-companion.mjs`)
-  ];
+  const workspaceRoots = [
+    process.env.AGENTS_PLUGIN_CC_ROOT,
+    path.resolve(ROOT_DIR, "..", "..", ".."),
+    path.resolve(process.cwd(), "..")
+  ].filter(Boolean);
+  const candidates = workspaceRoots.map((root) =>
+    path.join(root, repo, "plugins", agent, "scripts", `${agent}-companion.mjs`)
+  );
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }
