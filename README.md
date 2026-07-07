@@ -1,6 +1,6 @@
-# Claude Code plugin for Claude Code
+# Claude Code plugin for Claude Code and Codex
 
-This plugin is for Claude Code users who want to delegate code reviews or tasks to the
+This plugin is for Claude Code and Codex users who want to delegate code reviews or tasks to the
 **Claude Code CLI** (`claude`) itself — useful for cross-session work, agent-of-agent
 orchestration, or just running a fresh Claude session against a specific task without
 cluttering the current Claude Code session.
